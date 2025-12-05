@@ -1,0 +1,9 @@
+{
+  "pnl": 737.6896575745541,
+  "name": "Extreme Momentum Scalping",
+  "params": {
+    "threshold": 1e-05
+  },
+  "sharpe": 3.9265727627547404,
+  "mdd": -0.06478643114767091
+}

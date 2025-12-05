@@ -35,15 +35,17 @@ def validate_decision(decision: dict) -> bool:
         if not isinstance(value, (int, float)):
             print(f"ERREUR: La valeur pour '{key}' n'est pas numérique: {value}")
             return False
-        if value < 0 or value > 1:
-            print(f"ERREUR: La valeur pour '{key}' doit être entre 0 et 1, reçu: {value}")
+        # Permettre les valeurs négatives pour le levier (short positions)
+        # Limite: -10 à 11 (levier max ~10x)
+        if value < -10 or value > 11:
+            print(f"ERREUR: La valeur pour '{key}' doit être entre -10 et 11, reçu: {value}")
             return False
-    
+
     total = sum(decision.values())
     if abs(total - 1.0) > 0.00001:
         print(f"ERREUR: La somme des allocations doit être égale à 1, mais vaut {total}")
         return False
-    
+
     return True
 
 def main():
