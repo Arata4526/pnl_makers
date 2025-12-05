@@ -1,0 +1,116 @@
+
+import numpy as np
+import json
+import os
+
+# ============================================================================
+# Global State Variables
+# ============================================================================
+history = []  # List of historical prices
+current_pos = 0.0  # 0.0 = Cash, 1.0 = Long
+entry_price = 0.0  # Track entry price for stop loss
+
+# Default Configuration
+CONFIG = {
+    'bb_window': 15,
+    'bb_std': 2.0,
+    'rsi_period': 14,
+    'rsi_lower': 30,
+    'rsi_upper': 70,
+    'stop_loss': 0.08
+}
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def calculate_bollinger_bands(prices: list, window: int = 20, num_std: float = 2.0) -> dict:
+    if len(prices) < window:
+        return None
+    prices_array = np.array(prices[-window:])
+    sma = np.mean(prices_array)
+    std = np.std(prices_array, ddof=1)
+    return {
+        'sma': sma,
+        'upper': sma + (num_std * std),
+        'lower': sma - (num_std * std),
+        'std': std
+    }
+
+def calculate_rsi(prices: list, period: int = 14) -> float:
+    if len(prices) < period + 1:
+        return 50.0
+    prices_array = np.array(prices[-(period + 1):])
+    deltas = np.diff(prices_array)
+    gains = np.where(deltas > 0, deltas, 0)
+    losses = np.where(deltas < 0, -deltas, 0)
+    avg_gain = np.mean(gains)
+    avg_loss = np.mean(losses)
+    if avg_loss == 0:
+        return 100.0 if avg_gain > 0 else 50.0
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1.0 + rs))
+
+def calculate_volatility(prices: list, window: int = 20) -> float:
+    if len(prices) < window: return 0.0
+    std = np.std(prices[-window:], ddof=1)
+    current_price = prices[-1]
+    return std / current_price if current_price != 0 else 0.0
+
+# ============================================================================
+# Main Decision Function
+# ============================================================================
+
+def make_decision(epoch: int, price: float) -> dict:
+    global history, current_pos, entry_price
+
+    # Update history
+    history.append(price)
+    current_price = price
+
+    # WARMUP
+    if len(history) < 30:
+        return {'Asset A': 0.0, 'Cash': 1.0}
+
+    # CALCULATE INDICATORS
+    bb = calculate_bollinger_bands(history, window=CONFIG['bb_window'], num_std=CONFIG['bb_std'])
+    rsi = calculate_rsi(history, period=CONFIG['rsi_period'])
+    
+    # If not enough data
+    if bb is None:
+        return {'Asset A': 0.0, 'Cash': 1.0}
+
+    # SIGNALS
+    buy_signal = False
+    sell_signal = False
+
+    # Buy: Price < Lower BB OR RSI < Lower Threshold
+    if current_price < bb['lower']: buy_signal = True
+    if rsi < CONFIG['rsi_lower']: buy_signal = True
+
+    # Sell: Price > Upper BB OR RSI > Upper Threshold
+    if current_price > bb['upper']: sell_signal = True
+    if rsi > CONFIG['rsi_upper']: sell_signal = True
+
+    # EXECUTE STATE CHANGE
+    if buy_signal:
+        if current_pos == 0.0:
+            entry_price = current_price
+        current_pos = 1.0
+
+    if sell_signal:
+        current_pos = 0.0
+        entry_price = 0.0
+
+    # STOP LOSS
+    if current_pos == 1.0 and entry_price > 0:
+        loss_pct = (entry_price - current_price) / entry_price
+        if loss_pct > CONFIG['stop_loss']:
+            current_pos = 0.0
+            entry_price = 0.0
+            return {'Asset A': 0.0, 'Cash': 1.0}
+
+    # ALLOCATION
+    allocation = 1.0 if current_pos == 1.0 else 0.0
+    
+    return {'Asset A': allocation, 'Cash': 1.0 - allocation}
